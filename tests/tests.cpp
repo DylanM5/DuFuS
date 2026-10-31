@@ -30,7 +30,7 @@ TEST_CASE("Directories cannot have a file and directory with the same names") {
 
 TEST_CASE("lookup() with existing files") {
     dfs::FileSystem fs;
-    auto file = fs.create_file("hello.txt");
+    REQUIRE(fs.create_file("hello.txt"));
     auto res = fs.lookup(0, "hello.txt");
     REQUIRE(res == 1);
 }
@@ -56,7 +56,8 @@ TEST_CASE("Path creation with matching names in different directories") {
     dfs::FileSystem fs;
 
     auto dir = fs.create_directory("home");
-    auto hello = fs.create_file("hello.txt");
+    REQUIRE(dir);
+    REQUIRE(fs.create_file("hello.txt"));
     auto hi = fs.create_file(*dir, "hello.txt");
 
     auto res = fs.resolve_path("/home/hello.txt");
