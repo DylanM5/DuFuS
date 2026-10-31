@@ -1,4 +1,5 @@
 #include "filesystem.hpp"
+#include <algorithm> // std::find, std::sort
 
 namespace dfs {
 
@@ -20,6 +21,7 @@ DfsRet<u32> FileSystem::create_directory(u32 parent_inode, const std::string &na
     return inode;
 }
 
+// Creates a directory in root
 DfsRet<u32> FileSystem::create_directory(const std::string &name) { return create_directory(0, name); }
 
 DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
@@ -34,42 +36,8 @@ DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
     return inode;
 }
 
+// Creates a file in root
 DfsRet<u32> FileSystem::create_file(const std::string &name) { return create_file(0, name); }
-
-DfsRet<u32> FileSystem::alloc_inode(InodeType type) {
-    for (usize i{1}; i < inode_bmap.size(); ++i) {
-        if (!inode_bmap.test(i)) {        // at the first 0 bit
-            inode_table[i] = Inode(type); // add the Inode to the table
-            inode_bmap.set(i);            // toggle the bmap value at i to 1
-            return (u32)i;                // return the inode index
-        }
-    }
-
-    return std::unexpected(DfsError::NoFreeInodes); // no 0 bits in inode_bmap
-}
-
-DfsRet<u32> FileSystem::alloc_block() {
-    for (usize i{0}; i < data_bmap.size(); ++i) {
-        if (!data_bmap.test(i)) {
-            blocks[i] = Block{};
-            data_bmap.set(i);
-            return (u32)i;
-        }
-    }
-
-    return std::unexpected(DfsError::NoFreeBlocks);
-}
-
-DfsRet<void> FileSystem::free_block(u32 block) {
-    if (block >= NUM_BLOCKS)
-        return std::unexpected(DfsError::OutOfRange);
-
-    if (!data_bmap.test(block))
-        return std::unexpected(DfsError::AlreadyFree); // block double free
-
-    data_bmap.reset(block); // set bit at block to 0
-    return {};              // return void for expected
-}
 
 // returns inode number if found
 DfsRet<u32> FileSystem::lookup(u32 dir_inode, const std::string &name) const {
@@ -125,6 +93,25 @@ DfsRet<u32> FileSystem::resolve_path(const std::string &path) const {
     return inode;
 }
 
+// TODO: list mtime, length, and mode (when added)
+DfsRet<std::vector<std::string>> FileSystem::list_dir(const std::string &path) const {
+    auto inode = resolve_path(path);
+    if (!inode)
+        return std::unexpected(inode.error());
+
+    if (inode_table[*inode].type != InodeType::Dir)
+        return std::unexpected(DfsError::IncorrectType);
+
+    std::vector<std::string> ret{};
+    for (const auto &[name, node] : directories.at(*inode)) {
+        ret.emplace_back(name);
+    }
+
+    std::sort(ret.begin(), ret.end()); // sorting not really needed
+    return ret;
+};
+
+// Shell commands
 DfsRet<void> FileSystem::mkdir(const std::string &path) {
     auto pos = path.find_last_of('/');
 
@@ -144,30 +131,31 @@ DfsRet<void> FileSystem::mkdir(const std::string &path) {
     return {};
 }
 
-// TODO: list mtime, length, and mode (when added)
-DfsRet<std::vector<std::string>> FileSystem::list_dir(const std::string &path) const {
-    auto inode = resolve_path(path);
-    if (!inode)
-        return std::unexpected(inode.error());
-
-    if (inode_table[*inode].type != InodeType::Dir)
-        return std::unexpected(DfsError::IncorrectType);
-
-    std::vector<std::string> ret{};
-    for (const auto &[name, node] : directories.at(*inode)) {
-        ret.emplace_back(name);
-    }
-
-    std::sort(ret.begin(), ret.end());
-    return ret;
-};
-
 // Remove empty directory
-// DfsRet<void> FileSystem::rmdir(const std::string &path) {}
+DfsRet<void> FileSystem::rmdir(const std::string &path) {
+    auto pos = path.find_last_of('/');
 
-// DfsRet<int> creat(const std::string &path) {}
+    if (path.empty() || pos == std::string::npos)
+        return std::unexpected(DfsError::InvalidPath);
 
-void FileSystem::initialize_unix_fs() {
+    const std::string name = path.substr(pos + 1);
+    auto parent = resolve_path(pos == 0 ? "/" : path.substr(0, pos));
+
+    auto target = lookup(*parent, name);
+    if (!target)
+        return std::unexpected(target.error());
+
+    if (inode_table[*target].type != InodeType::Dir)
+        return std::unexpected(DfsError::IncorrectType);
+    if (!directories.at(*target).empty())
+        return std::unexpected(DfsError::NotEmpty);
+
+    directories.erase(*target);
+    directories.at(*parent).erase(name);
+    return free_inode(*target);
+}
+
+DfsRet<void> FileSystem::init_unix_dirs() {
     mkdir("/bin");
     mkdir("/boot");
     mkdir("/etc");
@@ -192,6 +180,63 @@ void FileSystem::initialize_unix_fs() {
     mkdir("/var/log");
     mkdir("/var/spool");
     mkdir("/var/tmp");
+
+    return {};
+}
+
+DfsRet<u32> FileSystem::alloc_inode(InodeType type) {
+    for (usize i{1}; i < inode_bmap.size(); ++i) {
+        if (!inode_bmap.test(i)) {        // at the first 0 bit
+            inode_table[i] = Inode(type); // add the Inode to the table
+            inode_bmap.set(i);            // toggle the bmap value at i to 1
+            return (u32)i;                // return the inode index
+        }
+    }
+
+    return std::unexpected(DfsError::NoFreeInodes); // no 0 bits in inode_bmap
+}
+
+DfsRet<void> FileSystem::free_inode(u32 inode) {
+    if (inode == 0 || inode >= NUM_INODES) // can't free root
+        return std::unexpected(DfsError::OutOfRange);
+
+    if (!inode_bmap.test(inode))
+        return std::unexpected(DfsError::AlreadyFree); // block double free
+
+    inode_table[inode] = Inode(InodeType::Free); // set to a new Free Inode
+    inode_bmap.reset(inode);                     // mark free in the bitmap
+    return {};
+}
+
+DfsRet<u32> FileSystem::alloc_block() {
+    for (usize i{0}; i < data_bmap.size(); ++i) {
+        if (!data_bmap.test(i)) {
+            blocks[i] = Block{};
+            data_bmap.set(i);
+            return (u32)i;
+        }
+    }
+
+    return std::unexpected(DfsError::NoFreeBlocks);
+}
+
+DfsRet<void> FileSystem::free_block(u32 block) {
+    if (block >= NUM_BLOCKS)
+        return std::unexpected(DfsError::OutOfRange);
+
+    if (!data_bmap.test(block))
+        return std::unexpected(DfsError::AlreadyFree); // block double free
+
+    data_bmap.reset(block); // set bit at block to 0
+    return {};              // return void for expected
+}
+
+// Non-member functions
+
+std::unique_ptr<FileSystem> make_unix_fs() {
+    auto fs = std::make_unique<FileSystem>();
+    fs->init_unix_dirs();
+    return fs;
 }
 
 } // namespace dfs

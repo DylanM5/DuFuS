@@ -6,6 +6,7 @@
 #include <cstdint> // std::uint8_t, std::uint32_t
 #include <ctime>   // std::time_t
 #include <expected>
+#include <memory> // std::unique_ptr
 #include <string>
 #include <unordered_map>
 // #include <utility> // std::pair
@@ -25,6 +26,7 @@ enum class DfsError : u8 {
     NoFreeInodes,
     NoFreeBlocks,
     NotFound,
+    NotEmpty,
     OutOfRange,
     IncorrectType,
     InvalidPath,
@@ -72,16 +74,12 @@ class FileSystem {
 
   public:
     FileSystem();
+    ~FileSystem() = default;
 
-    int open();
-    int close(int fd);
-    int read(int fd);
-    int write(int fd);
-
-    int lseek();
-    int fsync();
-    int dup(int fd);
-    int mmap();
+    FileSystem(const FileSystem &) = delete;
+    FileSystem(FileSystem &&) = delete;
+    FileSystem &operator=(const FileSystem &) = delete;
+    FileSystem &operator=(FileSystem &&) = delete;
 
     // Create directory in root
     DfsRet<u32> create_directory(const std::string &name);
@@ -94,19 +92,36 @@ class FileSystem {
     DfsRet<u32> lookup(u32 dir_inode, const std::string &name) const;
     DfsRet<u32> resolve_path(const std::string &path) const;
 
-    void initialize_unix_fs();
+    // syscalls
+    // DfsRet<int> creat(const std::string &path);
+    int open();
+    int close(int fd);
+    int read(int fd);
+    int write(int fd);
+
+    int lseek();
+    int fsync();
+    int dup(int fd);
+    int mmap();
+
+    // Shell commands
+    DfsRet<void> mkdir(const std::string &path);
+    DfsRet<void> rmdir(const std::string &path);
+
+    // helpers
+
+    DfsRet<void> init_unix_dirs();
     // used by ls
     DfsRet<std::vector<std::string>> list_dir(const std::string &path) const;
 
-    // POSIX interface
-    DfsRet<void> mkdir(const std::string &path);
-    DfsRet<int> creat(const std::string &path);
-    DfsRet<void> rmdir(const std::string &path);
-
   private:
     DfsRet<u32> alloc_inode(InodeType type);
+    DfsRet<void> free_inode(u32 inode);
+
     DfsRet<u32> alloc_block();
     DfsRet<void> free_block(u32 block);
 };
+
+std::unique_ptr<FileSystem> make_unix_fs();
 
 } // namespace dfs

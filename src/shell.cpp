@@ -50,7 +50,7 @@ void start_shell(FileSystem &fs) {
         }
 
         else if (command == "init")
-            fs.initialize_unix_fs();
+            fs.init_unix_dirs();
 
         else if (command == "help")
             std::cout << "no\n";

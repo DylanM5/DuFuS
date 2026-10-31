@@ -65,20 +65,35 @@ TEST_CASE("Path creation with matching names in different directories") {
 
 TEST_CASE("init unix fs") {
     dfs::FileSystem fs;
-    fs.initialize_unix_fs();
+    fs.init_unix_dirs();
     auto res = fs.resolve_path("/var/cache");
     REQUIRE(res.has_value());
 }
 
 TEST_CASE("Test mkdir") {
     dfs::FileSystem fs;
-    fs.mkdir("/etc");
-    auto res = fs.lookup(0, "etc");
+    fs.mkdir("/var");
+    auto res = fs.lookup(0, "var");
     REQUIRE(res.has_value());
     REQUIRE(res == 1);
 
-    fs.mkdir("/etc/fstab");
-    res = fs.resolve_path("/etc/fstab");
+    fs.mkdir("/var/log");
+    res = fs.resolve_path("/var/log");
     REQUIRE(res.has_value());
     REQUIRE(res == 2);
+}
+
+TEST_CASE("rmdir removes an empty directory") {
+    auto fs = dfs::make_unix_fs();
+    REQUIRE(fs->rmdir("/usr/include"));
+    REQUIRE(fs->resolve_path("/usr/include").error() == dfs::DfsError::NotFound);
+    REQUIRE(fs->resolve_path("/usr/bin"));
+}
+
+TEST_CASE("rmdir fails on non-empty and on files") {
+    auto fs = dfs::make_unix_fs();
+    REQUIRE(fs->rmdir("/usr").error() == dfs::DfsError::NotEmpty);
+
+    REQUIRE(fs->create_file("hi"));
+    REQUIRE(fs->rmdir("/hi").error() == dfs::DfsError::IncorrectType);
 }
