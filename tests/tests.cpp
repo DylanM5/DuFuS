@@ -69,3 +69,16 @@ TEST_CASE("init unix fs") {
     auto res = fs.resolve_path("/var/cache");
     REQUIRE(res.has_value());
 }
+
+TEST_CASE("Test mkdir") {
+    dfs::FileSystem fs;
+    fs.mkdir("/etc");
+    auto res = fs.lookup(0, "etc");
+    REQUIRE(res.has_value());
+    REQUIRE(res == 1);
+
+    fs.mkdir("/etc/fstab");
+    res = fs.resolve_path("/etc/fstab");
+    REQUIRE(res.has_value());
+    REQUIRE(res == 2);
+}

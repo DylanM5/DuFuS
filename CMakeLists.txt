@@ -82,7 +82,7 @@ endfunction()
 # --------------------------------------------------
 
 add_library(file_system_core STATIC
-    src/filesystem.cpp
+    src/filesystem.cpp src/shell.cpp
 )
 
 target_include_directories(file_system_core PUBLIC

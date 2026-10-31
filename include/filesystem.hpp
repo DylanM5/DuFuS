@@ -8,6 +8,8 @@
 #include <expected>
 #include <string>
 #include <unordered_map>
+// #include <utility> // std::pair
+#include <vector>
 
 namespace dfs {
 
@@ -25,6 +27,7 @@ enum class DfsError : u8 {
     NotFound,
     OutOfRange,
     IncorrectType,
+    InvalidPath,
     AlreadyExists,
     AlreadyFree,
 };
@@ -92,14 +95,17 @@ class FileSystem {
     DfsRet<u32> resolve_path(const std::string &path) const;
 
     void initialize_unix_fs();
+    // used by ls
+    DfsRet<std::vector<std::string>> list_dir(const std::string &path) const;
 
     // POSIX interface
     DfsRet<void> mkdir(const std::string &path);
     DfsRet<int> creat(const std::string &path);
+    DfsRet<void> rmdir(const std::string &path);
 
   private:
-    DfsRet<u32> create_inode(InodeType type);
-    DfsRet<u32> allocate_block();
+    DfsRet<u32> alloc_inode(InodeType type);
+    DfsRet<u32> alloc_block();
     DfsRet<void> free_block(u32 block);
 };
 

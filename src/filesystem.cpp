@@ -12,8 +12,8 @@ DfsRet<u32> FileSystem::create_directory(u32 parent_inode, const std::string &na
     if (directories.at(parent_inode).contains(name))
         return std::unexpected(DfsError::AlreadyExists);
 
-    DfsRet<u32> inode = create_inode(InodeType::Dir);
-    if (inode.has_value()) {                                // if an error is not returned by create_inode
+    DfsRet<u32> inode = alloc_inode(InodeType::Dir);
+    if (inode.has_value()) {                                // if an error is not returned by alloc_inode
         directories.emplace(*inode, Directory());           // add to dictionaries
         directories.at(parent_inode).emplace(name, *inode); // name, inode pair of the dir in the added Directory
     }
@@ -26,7 +26,7 @@ DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
     if (directories.at(parent_inode).contains(name))
         return std::unexpected(DfsError::AlreadyExists);
 
-    DfsRet<u32> inode = create_inode(InodeType::File);
+    DfsRet<u32> inode = alloc_inode(InodeType::File);
 
     if (inode.has_value())
         directories.at(parent_inode).emplace(name, *inode); // currently always creates at root
@@ -36,7 +36,7 @@ DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
 
 DfsRet<u32> FileSystem::create_file(const std::string &name) { return create_file(0, name); }
 
-DfsRet<u32> FileSystem::create_inode(InodeType type) {
+DfsRet<u32> FileSystem::alloc_inode(InodeType type) {
     for (usize i{1}; i < inode_bmap.size(); ++i) {
         if (!inode_bmap.test(i)) {        // at the first 0 bit
             inode_table[i] = Inode(type); // add the Inode to the table
@@ -48,7 +48,7 @@ DfsRet<u32> FileSystem::create_inode(InodeType type) {
     return std::unexpected(DfsError::NoFreeInodes); // no 0 bits in inode_bmap
 }
 
-DfsRet<u32> FileSystem::allocate_block() {
+DfsRet<u32> FileSystem::alloc_block() {
     for (usize i{0}; i < data_bmap.size(); ++i) {
         if (!data_bmap.test(i)) {
             blocks[i] = Block{};
@@ -92,24 +92,28 @@ DfsRet<u32> FileSystem::lookup(u32 dir_inode, const std::string &name) const {
 }
 
 /**
- * @param path: The path you want resolved with '/' delimiter. A leading '/' is root.
+ * @param path: The path you want resolved with '/' delimiter. A leading '/' is root. Currently doesn't work with
+ * relative paths.
  * @return DfsRet<u32> Inode number of the trailing part of the path if found
  */
 DfsRet<u32> FileSystem::resolve_path(const std::string &path) const {
     auto it = path.begin();
-    u32 inode = 0; // TODO: relative paths. currently always starts at root
+    if (path.empty() || path.at(0) != '/')
+        return std::unexpected(DfsError::InvalidPath);
+
+    u32 inode = 0;
 
     while (it != path.end()) {
 
         if (*it == '/') {
             ++it;
-            continue;
+            continue; // skip '/'
         }
         auto next = std::find(it, path.end(), '/');
 
         std::string sec(it, next); // section of the string
 
-        auto res = lookup(inode, sec);
+        auto res = lookup(inode, sec); // ret inode idx
 
         if (!res.has_value())
             return std::unexpected(res.error());
@@ -124,7 +128,7 @@ DfsRet<u32> FileSystem::resolve_path(const std::string &path) const {
 DfsRet<void> FileSystem::mkdir(const std::string &path) {
     auto pos = path.find_last_of('/');
 
-    const std::string parent_path = path.substr(0, pos);
+    const std::string parent_path = (pos == 0) ? "/" : path.substr(0, pos);
     const std::string name = path.substr(pos + 1);
 
     auto parent = resolve_path(parent_path);
@@ -139,6 +143,29 @@ DfsRet<void> FileSystem::mkdir(const std::string &path) {
 
     return {};
 }
+
+// TODO: list mtime, length, and mode (when added)
+DfsRet<std::vector<std::string>> FileSystem::list_dir(const std::string &path) const {
+    auto inode = resolve_path(path);
+    if (!inode)
+        return std::unexpected(inode.error());
+
+    if (inode_table[*inode].type != InodeType::Dir)
+        return std::unexpected(DfsError::IncorrectType);
+
+    std::vector<std::string> ret{};
+    for (const auto &[name, node] : directories.at(*inode)) {
+        ret.emplace_back(name);
+    }
+
+    std::sort(ret.begin(), ret.end());
+    return ret;
+};
+
+// Remove empty directory
+// DfsRet<void> FileSystem::rmdir(const std::string &path) {}
+
+// DfsRet<int> creat(const std::string &path) {}
 
 void FileSystem::initialize_unix_fs() {
     mkdir("/bin");
