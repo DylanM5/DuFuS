@@ -1,37 +1,37 @@
 name: C++ CI
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        compiler: [g++-14, clang++-18]
-        sanitizers: [OFF, ON]
+    build:
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                compiler: [g++-14, clang++-18]
+                sanitizers: [OFF, ON]
 
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: install
-      run: sudo apt update && sudo apt install -y ninja-build
-      
-    - name: cmake
-      run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
-          -DENABLE_WERROR=ON
-          -DENABLE_SANITIZERS=${{ matrix.sanitizers }}
-          -DUSE_CCACHE=OFF
+        steps:
+            - uses: actions/checkout@v4
 
-    - name: build
-      run: cmake --build build
-    
-    - name: test
-      run: ctest --test-dir build --output-on-failure
+            - name: install
+              run: sudo apt update && sudo apt install -y ninja-build clang-18 libclang-rt-18-dev libstdc++-14-dev
+
+            - name: cmake
+              run: >
+                  cmake -S . -B build -G Ninja
+                  -DCMAKE_BUILD_TYPE=Debug
+                  -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+                  -DENABLE_WERROR=ON
+                  -DENABLE_SANITIZERS=${{ matrix.sanitizers }}
+                  -DUSE_CCACHE=OFF
+
+            - name: build
+              run: cmake --build build
+
+            - name: test
+              run: ctest --test-dir build --output-on-failure
