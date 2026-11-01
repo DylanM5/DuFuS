@@ -12,6 +12,7 @@
 // #include <utility> // std::pair
 #include <vector>
 
+// Dylan's File System
 namespace dfs {
 
 using u8 = std::uint8_t;
@@ -120,6 +121,8 @@ class FileSystem {
 
     DfsRet<u32> alloc_block();
     DfsRet<void> free_block(u32 block);
+
+    DfsRet<void> validate_dir(u32 inode) const;
 };
 
 std::unique_ptr<FileSystem> make_unix_fs();

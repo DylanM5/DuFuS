@@ -41,6 +41,13 @@ TEST_CASE("lookup() without existing files") {
     REQUIRE(res.error() == dfs::DfsError::NotFound);
 }
 
+TEST_CASE("OutOfRange lookup()") {
+    dfs::FileSystem fs;
+    REQUIRE(fs.create_file("hello.txt"));
+    auto res = fs.lookup(dfs::NUM_INODES, "hello.txt");
+    REQUIRE(res.error() == dfs::DfsError::OutOfRange);
+}
+
 TEST_CASE("resolve_path() that exists") {
     dfs::FileSystem fs;
     auto home = fs.create_directory("home");
@@ -73,15 +80,34 @@ TEST_CASE("init unix fs") {
 
 TEST_CASE("Test mkdir") {
     dfs::FileSystem fs;
-    fs.mkdir("/var");
+    REQUIRE(fs.mkdir("/var"));
     auto res = fs.lookup(0, "var");
     REQUIRE(res.has_value());
     REQUIRE(res == 1);
 
-    fs.mkdir("/var/log");
+    REQUIRE(fs.mkdir("/var/log"));
     res = fs.resolve_path("/var/log");
     REQUIRE(res.has_value());
     REQUIRE(res == 2);
+}
+
+TEST_CASE("mkdir with a file as the parent") {
+    dfs::FileSystem fs;
+    fs.create_file("info");
+    auto res = fs.mkdir("/info/more_info");
+    REQUIRE_FALSE(res);
+    REQUIRE(res.error() == dfs::DfsError::IncorrectType);
+}
+
+TEST_CASE("mkdir: duplicate directories") {
+    dfs::FileSystem fs;
+    fs.mkdir("/etc");
+    auto res = fs.mkdir("/etc");
+    REQUIRE(res.error() == dfs::DfsError::AlreadyExists);
+    REQUIRE(fs.rmdir("/etc"));
+    fs.mkdir("/etc");
+    auto t = fs.lookup(0, "etc");
+    REQUIRE(*t == 1);
 }
 
 TEST_CASE("rmdir removes an empty directory") {
