@@ -1,45 +1,48 @@
 #include "filesystem.hpp"
 #include <algorithm> // std::find, std::sort
-#include <utility>   // std::move
 
 namespace dfs {
 // utility funcs
 namespace {
 struct ParsePath {
-    std::string parent;
-    std::string name;
+    std::string_view parent;
+    std::string_view name;
 };
 
-DfsRet<ParsePath> parse_path(const std::string &path) {
+Result<ParsePath> parse_path(std::string_view path) {
     if (path.empty() || path[0] != '/')
-        return std::unexpected(DfsError::InvalidPath);
+        return std::unexpected(Error::InvalidPath);
 
     const auto pos = path.find_last_of('/');
-    std::string name = path.substr(pos + 1);
+    std::string_view name = path.substr(pos + 1);
 
     if (name.empty())
-        return std::unexpected(DfsError::InvalidPath);
+        return std::unexpected(Error::InvalidPath);
 
-    return ParsePath{pos == 0 ? "/" : path.substr(0, pos), std::move(name)};
+    return ParsePath{pos == 0 ? "/" : path.substr(0, pos), name};
 }
 } // namespace
 
 FileSystem::FileSystem() {
     inode_table[0] = Inode(InodeType::Dir); // creates root inode
-    inode_bmap.set(0);                      // 0th node is used
-    directories.emplace(0, Directory());    // add root directory
+    inode_bmap.set(0);
+    directories.emplace(0, Directory()); // add root directory
 }
 
-DfsRet<u32> FileSystem::create_directory(u32 parent_inode, const std::string &name) {
+/**
+ * Public, but create_* should be private
+ * @param name: Must be a unique name in the parent inode and may not contain a forward slash
+ */
+Result<u32> FileSystem::create_dir(u32 parent_inode, std::string_view name) {
     if (auto v = validate_dir(parent_inode); !v)
         return std::unexpected(v.error());
-    if (name.empty() || name.contains('/')) // no slashes
-        return std::unexpected(DfsError::InvalidPath);
+    if (name.empty() || name.contains('/'))
+        return std::unexpected(Error::InvalidPath);
 
-    if (directories.at(parent_inode).contains(name))
-        return std::unexpected(DfsError::AlreadyExists);
+    if (directories.at(parent_inode).contains(std::string{name}))
+        return std::unexpected(Error::AlreadyExists);
 
-    DfsRet<u32> inode = alloc_inode(InodeType::Dir);
+    Result<u32> inode = alloc_inode(InodeType::Dir);
     if (inode.has_value()) {                                // if an error is not returned by alloc_inode
         directories.emplace(*inode, Directory());           // add to dictionaries
         directories.at(parent_inode).emplace(name, *inode); // name, inode pair of the dir in the added Directory
@@ -48,18 +51,18 @@ DfsRet<u32> FileSystem::create_directory(u32 parent_inode, const std::string &na
 }
 
 // Creates a directory in root
-DfsRet<u32> FileSystem::create_directory(const std::string &name) { return create_directory(0, name); }
+Result<u32> FileSystem::create_dir(std::string_view name) { return create_dir(0, name); }
 
-DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
+Result<u32> FileSystem::create_file(u32 parent_inode, std::string_view name) {
     if (auto v = validate_dir(parent_inode); !v)
         return std::unexpected(v.error());
-    if (name.empty() || name.contains('/')) // no slashes
-        return std::unexpected(DfsError::InvalidPath);
+    if (name.empty() || name.contains('/'))
+        return std::unexpected(Error::InvalidPath);
 
-    if (directories.at(parent_inode).contains(name))
-        return std::unexpected(DfsError::AlreadyExists);
+    if (directories.at(parent_inode).contains(std::string{name}))
+        return std::unexpected(Error::AlreadyExists);
 
-    DfsRet<u32> inode = alloc_inode(InodeType::File);
+    Result<u32> inode = alloc_inode(InodeType::File);
 
     if (inode.has_value())
         directories.at(parent_inode).emplace(name, *inode); // currently always creates at root
@@ -68,20 +71,21 @@ DfsRet<u32> FileSystem::create_file(u32 parent_inode, const std::string &name) {
 }
 
 // Creates a file in root
-DfsRet<u32> FileSystem::create_file(const std::string &name) { return create_file(0, name); }
+Result<u32> FileSystem::create_file(std::string_view name) { return create_file(0, name); }
 
 // returns inode number if found
-DfsRet<u32> FileSystem::lookup(u32 dir_inode, const std::string &name) const {
+Result<u32> FileSystem::lookup(u32 dir_inode, std::string_view name) const {
     if (auto v = validate_dir(dir_inode); !v)
         return std::unexpected(v.error());
 
     const Directory &directory = directories.at(dir_inode);
-    const Directory::const_iterator key = directory.find(name);
+    const Directory::const_iterator key = directory.find(std::string{name});
     if (key == directory.end()) {
-        return std::unexpected(DfsError::NotFound);
+        return std::unexpected(Error::NotFound);
     }
 
-    return key->second; // the inode number associated with the name
+    u32 value = key->second;
+    return value;
 }
 
 /**
@@ -89,10 +93,10 @@ DfsRet<u32> FileSystem::lookup(u32 dir_inode, const std::string &name) const {
  * relative paths.
  * @return DfsRet<u32> Inode number of the trailing part of the path if found
  */
-DfsRet<u32> FileSystem::resolve_path(const std::string &path) const {
+Result<u32> FileSystem::resolve_path(std::string_view path) const {
     auto it = path.begin();
     if (path.empty() || path.at(0) != '/')
-        return std::unexpected(DfsError::InvalidPath);
+        return std::unexpected(Error::InvalidPath);
 
     u32 inode = 0;
 
@@ -119,13 +123,13 @@ DfsRet<u32> FileSystem::resolve_path(const std::string &path) const {
 }
 
 // TODO: list mtime, length, and mode (when added)
-DfsRet<std::vector<std::string>> FileSystem::list_dir(const std::string &path) const {
+Result<std::vector<std::string>> FileSystem::list_dir(std::string_view path) const {
     auto inode = resolve_path(path);
     if (!inode)
         return std::unexpected(inode.error());
 
     if (inode_table[*inode].type != InodeType::Dir)
-        return std::unexpected(DfsError::IncorrectType);
+        return std::unexpected(Error::IncorrectType);
 
     std::vector<std::string> ret{};
     for (const auto &[name, node] : directories.at(*inode)) {
@@ -137,7 +141,7 @@ DfsRet<std::vector<std::string>> FileSystem::list_dir(const std::string &path) c
 }
 
 // Shell commands
-DfsRet<void> FileSystem::mkdir(const std::string &path) {
+Result<void> FileSystem::mkdir(std::string_view path) {
     auto p = parse_path(path);
     if (!p)
         return std::unexpected(p.error());
@@ -146,7 +150,7 @@ DfsRet<void> FileSystem::mkdir(const std::string &path) {
     if (!parent)
         return std::unexpected(parent.error());
 
-    auto result = create_directory(*parent, p->name);
+    auto result = create_dir(*parent, p->name);
 
     if (!result)
         return std::unexpected(result.error());
@@ -155,7 +159,7 @@ DfsRet<void> FileSystem::mkdir(const std::string &path) {
 }
 
 // Remove empty directory
-DfsRet<void> FileSystem::rmdir(const std::string &path) {
+Result<void> FileSystem::rmdir(std::string_view path) {
     auto p = parse_path(path);
     if (!p)
         return std::unexpected(p.error());
@@ -169,20 +173,20 @@ DfsRet<void> FileSystem::rmdir(const std::string &path) {
         return std::unexpected(target.error());
 
     if (inode_table[*target].type != InodeType::Dir)
-        return std::unexpected(DfsError::IncorrectType);
+        return std::unexpected(Error::IncorrectType);
     if (!directories.at(*target).empty())
-        return std::unexpected(DfsError::NotEmpty);
+        return std::unexpected(Error::NotEmpty);
 
     auto ret = free_inode(*target);
     if (!ret.has_value()) // don't erase from dictionaries if free_node throws
         return ret;
 
-    directories.at(*parent).erase(p->name);
+    directories.at(*parent).erase(std::string(p->name));
     directories.erase(*target);
     return ret;
 }
 
-DfsRet<void> FileSystem::init_unix_dirs() {
+Result<void> FileSystem::init_unix_dirs() {
     mkdir("/bin");
     mkdir("/boot");
     mkdir("/etc");
@@ -211,7 +215,9 @@ DfsRet<void> FileSystem::init_unix_dirs() {
     return {};
 }
 
-DfsRet<u32> FileSystem::alloc_inode(InodeType type) {
+// PRIVATE
+
+Result<u32> FileSystem::alloc_inode(InodeType type) {
     for (usize i{1}; i < inode_bmap.size(); ++i) {
         if (!inode_bmap.test(i)) {        // at the first 0 bit
             inode_table[i] = Inode(type); // add the Inode to the table
@@ -220,22 +226,22 @@ DfsRet<u32> FileSystem::alloc_inode(InodeType type) {
         }
     }
 
-    return std::unexpected(DfsError::NoFreeInodes); // no 0 bits in inode_bmap
+    return std::unexpected(Error::NoFreeInodes); // no 0 bits in inode_bmap
 }
 
-DfsRet<void> FileSystem::free_inode(u32 inode) {
+Result<void> FileSystem::free_inode(u32 inode) {
     if (inode == 0 || inode >= NUM_INODES) // can't free root
-        return std::unexpected(DfsError::OutOfRange);
+        return std::unexpected(Error::OutOfRange);
 
     if (!inode_bmap.test(inode))
-        return std::unexpected(DfsError::AlreadyFree); // block double free
+        return std::unexpected(Error::AlreadyFree); // block double free
 
     inode_table[inode] = Inode(InodeType::Free); // set to a new Free Inode
     inode_bmap.reset(inode);                     // mark free in the bitmap
     return {};
 }
 
-DfsRet<u32> FileSystem::alloc_block() {
+Result<u32> FileSystem::alloc_block() {
     for (usize i{0}; i < data_bmap.size(); ++i) {
         if (!data_bmap.test(i)) {
             blocks[i] = Block{};
@@ -244,29 +250,29 @@ DfsRet<u32> FileSystem::alloc_block() {
         }
     }
 
-    return std::unexpected(DfsError::NoFreeBlocks);
+    return std::unexpected(Error::NoFreeBlocks);
 }
 
-DfsRet<void> FileSystem::free_block(u32 block) {
+Result<void> FileSystem::free_block(u32 block) {
     if (block >= NUM_BLOCKS)
-        return std::unexpected(DfsError::OutOfRange);
+        return std::unexpected(Error::OutOfRange);
 
     if (!data_bmap.test(block))
-        return std::unexpected(DfsError::AlreadyFree); // block double free
+        return std::unexpected(Error::AlreadyFree); // block double free
 
-    data_bmap.reset(block); // set bit at block to 0
-    return {};              // return void for expected
+    data_bmap.reset(block);
+    return {}; // return void for expected
 }
 
-DfsRet<void> FileSystem::validate_dir(u32 inode) const {
+Result<void> FileSystem::validate_dir(u32 inode) const {
     if (inode >= NUM_INODES)
-        return std::unexpected(DfsError::OutOfRange);
+        return std::unexpected(Error::OutOfRange);
 
     if (!inode_bmap.test(inode)) // the dir must be allocated
-        return std::unexpected(DfsError::NotFound);
+        return std::unexpected(Error::NotFound);
 
     if (inode_table[inode].type != InodeType::Dir) // must pass a dir inode
-        return std::unexpected(DfsError::IncorrectType);
+        return std::unexpected(Error::IncorrectType);
     return {};
 }
 

@@ -10,10 +10,12 @@
 #include <string>
 #include <unordered_map>
 // #include <utility> // std::pair
+#include <string_view>
 #include <vector>
 
 // Dylan's File System
 namespace dfs {
+#define TIME_NOW std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
 using u8 = std::uint8_t;
 using u32 = std::uint32_t;
@@ -23,7 +25,7 @@ constexpr usize BLOCK_SIZE = 4096;
 constexpr usize NUM_BLOCKS = 64;
 constexpr usize NUM_INODES = 128;
 
-enum class DfsError : u8 {
+enum class Error : u8 {
     NoFreeInodes,
     NoFreeBlocks,
     NotFound,
@@ -35,7 +37,7 @@ enum class DfsError : u8 {
     AlreadyFree,
 };
 
-template <typename T> using DfsRet = std::expected<T, DfsError>;
+template <typename T> using Result = std::expected<T, Error>;
 
 enum class InodeType : u8 { Free, File, Dir };
 
@@ -51,11 +53,9 @@ struct Inode {
 
     explicit Inode(InodeType t = InodeType::Free) : type{t} {
         if (t != InodeType::Free) {
-            std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-            btime = now;
-            atime = now;
-            mtime = now;
+            btime = TIME_NOW;
+            atime = TIME_NOW;
+            mtime = TIME_NOW;
         }
     }
 };
@@ -83,18 +83,18 @@ class FileSystem {
     FileSystem &operator=(FileSystem &&) = delete;
 
     // Create directory in root
-    DfsRet<u32> create_directory(const std::string &name);
-    DfsRet<u32> create_directory(u32 parent_inode, const std::string &name);
+    Result<u32> create_dir(std::string_view name);
+    Result<u32> create_dir(u32 parent_inode, std::string_view name);
 
     // Create file in root
-    DfsRet<u32> create_file(const std::string &name);
-    DfsRet<u32> create_file(u32 parent_inode, const std::string &name);
+    Result<u32> create_file(std::string_view name);
+    Result<u32> create_file(u32 parent_inode, std::string_view name);
 
-    DfsRet<u32> lookup(u32 dir_inode, const std::string &name) const;
-    DfsRet<u32> resolve_path(const std::string &path) const;
+    Result<u32> lookup(u32 dir_inode, std::string_view name) const;
+    Result<u32> resolve_path(std::string_view path) const;
 
     // syscalls
-    // DfsRet<int> creat(const std::string &path);
+    // DfsRet<int> creat(std::string_view path);
     int open();
     int close(int fd);
     int read(int fd);
@@ -106,23 +106,23 @@ class FileSystem {
     int mmap();
 
     // Shell commands
-    DfsRet<void> mkdir(const std::string &path);
-    DfsRet<void> rmdir(const std::string &path);
+    Result<void> mkdir(std::string_view path);
+    Result<void> rmdir(std::string_view path);
 
     // helpers
 
-    DfsRet<void> init_unix_dirs();
+    Result<void> init_unix_dirs();
     // used by ls
-    DfsRet<std::vector<std::string>> list_dir(const std::string &path) const;
+    Result<std::vector<std::string>> list_dir(std::string_view path) const;
 
   private:
-    DfsRet<u32> alloc_inode(InodeType type);
-    DfsRet<void> free_inode(u32 inode);
+    Result<u32> alloc_inode(InodeType type);
+    Result<void> free_inode(u32 inode);
 
-    DfsRet<u32> alloc_block();
-    DfsRet<void> free_block(u32 block);
+    Result<u32> alloc_block();
+    Result<void> free_block(u32 block);
 
-    DfsRet<void> validate_dir(u32 inode) const;
+    Result<void> validate_dir(u32 inode) const;
 };
 
 std::unique_ptr<FileSystem> make_unix_fs();

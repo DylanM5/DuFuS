@@ -12,11 +12,7 @@ cmake -S . -B build \
 
 cmake --build build -j
 
-./build/main
-
 ctest --test-dir build --output-on-failure
-
-./build/tests
 ```
 
 ```mermaid

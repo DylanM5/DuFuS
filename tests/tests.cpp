@@ -1,68 +1,70 @@
 #include "filesystem.hpp"
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("Duplicate directory does not allocate an inode") {
-    dfs::FileSystem fs;
+using namespace dfs;
 
-    auto first = fs.create_directory("home");
+TEST_CASE("Duplicate directory does not allocate an inode") {
+    FileSystem fs;
+
+    auto first = fs.create_dir("home");
     REQUIRE(first.has_value());
 
-    auto duplicate = fs.create_directory("home");
+    auto duplicate = fs.create_dir("home");
     REQUIRE_FALSE(duplicate.has_value());
 
-    auto second = fs.create_directory("documents");
+    auto second = fs.create_dir("documents");
     REQUIRE(second.has_value());
 
     REQUIRE(*second == 2);
 }
 
 TEST_CASE("Directories cannot have a file and directory with the same names") {
-    dfs::FileSystem fs;
+    FileSystem fs;
 
     auto file = fs.create_file("hello.txt");
     REQUIRE(file.has_value());
 
-    auto dir = fs.create_directory("hello.txt");
+    auto dir = fs.create_dir("hello.txt");
 
     REQUIRE_FALSE(dir.has_value());
-    REQUIRE(dir.error() == dfs::DfsError::AlreadyExists);
+    REQUIRE(dir.error() == Error::AlreadyExists);
 }
 
 TEST_CASE("lookup() with existing files") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     REQUIRE(fs.create_file("hello.txt"));
     auto res = fs.lookup(0, "hello.txt");
     REQUIRE(res == 1);
 }
 
 TEST_CASE("lookup() without existing files") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     auto res = fs.lookup(0, "hello.txt");
-    REQUIRE(res.error() == dfs::DfsError::NotFound);
+    REQUIRE(res.error() == Error::NotFound);
 }
 
 TEST_CASE("OutOfRange lookup()") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     REQUIRE(fs.create_file("hello.txt"));
-    auto res = fs.lookup(dfs::NUM_INODES, "hello.txt");
-    REQUIRE(res.error() == dfs::DfsError::OutOfRange);
+    auto res = fs.lookup(NUM_INODES, "hello.txt");
+    REQUIRE(res.error() == Error::OutOfRange);
 }
 
 TEST_CASE("resolve_path() that exists") {
-    dfs::FileSystem fs;
-    auto home = fs.create_directory("home");
+    FileSystem fs;
+    auto home = fs.create_dir("home");
     auto res = fs.resolve_path("/home");
     REQUIRE(res == *home);
 
-    auto docs = fs.create_directory(*home, "documents");
+    auto docs = fs.create_dir(*home, "documents");
     res = fs.resolve_path("/home/documents");
     REQUIRE(res == *docs);
 }
 
 TEST_CASE("Path creation with matching names in different directories") {
-    dfs::FileSystem fs;
+    FileSystem fs;
 
-    auto dir = fs.create_directory("home");
+    auto dir = fs.create_dir("home");
     REQUIRE(dir);
     REQUIRE(fs.create_file("hello.txt"));
     auto hi = fs.create_file(*dir, "hello.txt");
@@ -72,14 +74,14 @@ TEST_CASE("Path creation with matching names in different directories") {
 }
 
 TEST_CASE("init unix fs") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     fs.init_unix_dirs();
     auto res = fs.resolve_path("/var/cache");
     REQUIRE(res.has_value());
 }
 
 TEST_CASE("Test mkdir") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     REQUIRE(fs.mkdir("/var"));
     auto res = fs.lookup(0, "var");
     REQUIRE(res.has_value());
@@ -92,18 +94,18 @@ TEST_CASE("Test mkdir") {
 }
 
 TEST_CASE("mkdir with a file as the parent") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     fs.create_file("info");
     auto res = fs.mkdir("/info/more_info");
     REQUIRE_FALSE(res);
-    REQUIRE(res.error() == dfs::DfsError::IncorrectType);
+    REQUIRE(res.error() == Error::IncorrectType);
 }
 
 TEST_CASE("mkdir: duplicate directories") {
-    dfs::FileSystem fs;
+    FileSystem fs;
     fs.mkdir("/etc");
     auto res = fs.mkdir("/etc");
-    REQUIRE(res.error() == dfs::DfsError::AlreadyExists);
+    REQUIRE(res.error() == Error::AlreadyExists);
     REQUIRE(fs.rmdir("/etc"));
     fs.mkdir("/etc");
     auto t = fs.lookup(0, "etc");
@@ -111,16 +113,24 @@ TEST_CASE("mkdir: duplicate directories") {
 }
 
 TEST_CASE("rmdir removes an empty directory") {
-    auto fs = dfs::make_unix_fs();
+    auto fs = make_unix_fs();
     REQUIRE(fs->rmdir("/usr/include"));
-    REQUIRE(fs->resolve_path("/usr/include").error() == dfs::DfsError::NotFound);
+    REQUIRE(fs->resolve_path("/usr/include").error() == Error::NotFound);
     REQUIRE(fs->resolve_path("/usr/bin"));
 }
 
 TEST_CASE("rmdir fails on non-empty and on files") {
-    auto fs = dfs::make_unix_fs();
-    REQUIRE(fs->rmdir("/usr").error() == dfs::DfsError::NotEmpty);
+    auto fs = make_unix_fs();
+    REQUIRE(fs->rmdir("/usr").error() == Error::NotEmpty);
 
     REQUIRE(fs->create_file("hi"));
-    REQUIRE(fs->rmdir("/hi").error() == dfs::DfsError::IncorrectType);
+    REQUIRE(fs->rmdir("/hi").error() == Error::IncorrectType);
+}
+
+TEST_CASE("make and remove directory 1000 times") {
+    FileSystem fs;
+    for (int i{0}; i < 1000; ++i) {
+        REQUIRE(fs.mkdir("/etc"));
+        REQUIRE(fs.rmdir("/etc"));
+    }
 }

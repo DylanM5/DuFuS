@@ -56,7 +56,7 @@ void start_shell(FileSystem &fs) {
             std::cout << "no\n";
 
         else
-            std::cerr << "command not found. 'help' for options\n";
+            std::cerr << "command '" << command << "' not found. 'help' for options\n";
     }
 }
 
