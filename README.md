@@ -42,7 +42,7 @@ erDiagram
     FileSystem ||--|{ Inode : "stores"
     FileSystem ||--|{ Block : "stores"
     FileSystem ||--o{ Directory : "indexes"
-    Inode ||--o| Directory
+    Inode ||--o| Directory : "backs"
     Directory ||--o{ DirectoryEntry : "contains"
     Inode ||--o{ DirectoryEntry : "referenced by"
 
