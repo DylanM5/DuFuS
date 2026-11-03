@@ -95,7 +95,7 @@ TEST_CASE("Test mkdir") {
 
 TEST_CASE("mkdir with a file as the parent") {
     FileSystem fs;
-    fs.create_file("info");
+    REQUIRE(fs.create_file("info"));
     auto res = fs.mkdir("/info/more_info");
     REQUIRE_FALSE(res);
     REQUIRE(res.error() == Error::IncorrectType);
@@ -103,24 +103,24 @@ TEST_CASE("mkdir with a file as the parent") {
 
 TEST_CASE("mkdir: duplicate directories") {
     FileSystem fs;
-    fs.mkdir("/etc");
+    REQUIRE(fs.mkdir("/etc"));
     auto res = fs.mkdir("/etc");
     REQUIRE(res.error() == Error::AlreadyExists);
     REQUIRE(fs.rmdir("/etc"));
-    fs.mkdir("/etc");
+    REQUIRE(fs.mkdir("/etc"));
     auto t = fs.lookup(0, "etc");
     REQUIRE(*t == 1);
 }
 
 TEST_CASE("rmdir removes an empty directory") {
-    auto fs = make_unix_fs();
+    auto fs = create_unix_fs();
     REQUIRE(fs->rmdir("/usr/include"));
     REQUIRE(fs->resolve_path("/usr/include").error() == Error::NotFound);
     REQUIRE(fs->resolve_path("/usr/bin"));
 }
 
 TEST_CASE("rmdir fails on non-empty and on files") {
-    auto fs = make_unix_fs();
+    auto fs = create_unix_fs();
     REQUIRE(fs->rmdir("/usr").error() == Error::NotEmpty);
 
     REQUIRE(fs->create_file("hi"));
@@ -132,5 +132,19 @@ TEST_CASE("make and remove directory 1000 times") {
     for (int i{0}; i < 1000; ++i) {
         REQUIRE(fs.mkdir("/etc"));
         REQUIRE(fs.rmdir("/etc"));
+    }
+}
+
+TEST_CASE("make and remove directory with long name 1000 times") {
+    FileSystem fs;
+    for (int i{0}; i < 1000; ++i) {
+        REQUIRE(fs.mkdir("/reallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyre"
+                         "allyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreall"
+                         "yreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyre"
+                         "allyreallyreallyreallyreallyreallyreallyreallyreallylongname"));
+        REQUIRE(fs.rmdir("/reallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyre"
+                         "allyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreall"
+                         "yreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyreallyre"
+                         "allyreallyreallyreallyreallyreallyreallyreallyreallylongname"));
     }
 }

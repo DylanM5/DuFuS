@@ -82,7 +82,12 @@ endfunction()
 # --------------------------------------------------
 
 add_library(file_system_core STATIC
-    src/filesystem.cpp src/shell.cpp
+    src/filesystem.cpp
+    src/ialloc.cpp
+    src/balloc.cpp
+    src/dir.cpp
+    src/namei.cpp
+    src/shell.cpp
 )
 
 target_include_directories(file_system_core PUBLIC

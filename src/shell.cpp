@@ -1,7 +1,11 @@
 #include "shell.hpp"
+#include <iostream>
+#include <sstream>
+#include <string>
 
 namespace dfs {
 void start_shell(FileSystem &fs) {
+    std::cout << "DuFuS: Dylan's File System\n\n";
     std::string line;
 
     while (true) {
